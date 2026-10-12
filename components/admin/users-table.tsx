@@ -6,8 +6,9 @@ import {
   LockKeyhole,
   Plus,
   RefreshCw,
-  ShieldCheck,
+  Unlock,
   UserRound,
+  UserRoundCheck,
   UserRoundX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,14 @@ import {
 } from "@/lib/queries/admin";
 import { usePsps } from "@/lib/queries/psps";
 import type { PortalUser } from "@/lib/api/backend";
+
+// `locked_until` is only meaningful while it is still in the future. A past
+// timestamp means the automatic sign-in lockout has already expired.
+function lockExpiry(user: PortalUser): number | null {
+  if (!user.locked_until) return null;
+  const expiry = new Date(user.locked_until).getTime();
+  return Number.isFinite(expiry) && expiry > Date.now() ? expiry : null;
+}
 
 export function UsersTable({ currentUserId }: { currentUserId: number }) {
   const psps = usePsps();
@@ -224,17 +233,26 @@ export function UsersTable({ currentUserId }: { currentUserId: number }) {
                         {user.psp_code ?? "—"}
                       </td>
                       <td className="px-4 py-4">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs ${user.is_active ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}
-                        >
-                          {user.is_active ? "Active" : "Inactive"}
-                        </span>
-                        {user.locked_until && (
-                          <span className="ml-2 inline-flex items-center gap-1 text-xs text-rose-600">
-                            <LockKeyhole className="size-3" />
-                            Locked
+                        <div className="flex flex-col items-start gap-1.5">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${user.is_active ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}
+                          >
+                            {user.is_active ? "Active" : "Inactive"}
                           </span>
-                        )}
+                          {lockExpiry(user) && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-600 dark:text-rose-400"
+                              title={
+                                user.locked_until
+                                  ? `Temporary sign-in lockout until ${new Date(user.locked_until).toLocaleString()}`
+                                  : undefined
+                              }
+                            >
+                              <LockKeyhole className="size-3" />
+                              Locked
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-xs text-muted-foreground">
                         {user.last_login_at
@@ -261,11 +279,11 @@ export function UsersTable({ currentUserId }: { currentUserId: number }) {
                           >
                             <KeyRound className="size-4" />
                           </Button>
-                          {user.locked_until && (
+                          {lockExpiry(user) && (
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              title="Unlock account"
+                              title="Clear sign-in lockout"
                               aria-label={`Unlock ${user.email}`}
                               disabled={update.isPending}
                               onClick={() =>
@@ -275,7 +293,7 @@ export function UsersTable({ currentUserId }: { currentUserId: number }) {
                                 })
                               }
                             >
-                              <ShieldCheck className="size-4" />
+                              <Unlock className="size-4" />
                             </Button>
                           )}
                           <Button
@@ -297,7 +315,7 @@ export function UsersTable({ currentUserId }: { currentUserId: number }) {
                             {user.is_active ? (
                               <UserRoundX className="size-4 text-destructive" />
                             ) : (
-                              <ShieldCheck className="size-4" />
+                              <UserRoundCheck className="size-4 text-emerald-600" />
                             )}
                           </Button>
                         </div>
