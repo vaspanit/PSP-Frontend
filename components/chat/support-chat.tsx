@@ -8,8 +8,8 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
-import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
+import { motion } from "motion/react";
 import {
   Building2,
   Check,
@@ -29,6 +29,7 @@ import { useAuthUser } from "@/components/auth/auth-user-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RequestProofPreview } from "@/components/requests/request-proof-preview";
 import {
   useDirectChat,
   useDirectChats,
@@ -69,6 +70,8 @@ const formatBytes = (value: number | null | undefined) => {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const chatDoodle = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='112' viewBox='0 0 112 112' fill='none' stroke='%2394a3b8' stroke-opacity='.34' stroke-width='1.4'%3E%3Cpath d='M15 16h16v12H15zM75 12l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1zM24 70c0-8 7-14 15-14s15 6 15 14-7 14-15 14S24 78 24 70zM31 69h16M39 62v16M79 75c7-8 18-7 22 1 3 7-2 14-9 14h-8l-7 5 1-8c-4-4-4-8 1-12zM11 101l8-8 8 8-8 8zM62 45c8-6 17-5 21 0M67 50c5-3 10-3 13 0'/%3E%3C/svg%3E")`;
+
 const previewText = (chat: DirectChatSummary) => {
   const last = chat.last_message;
   if (!last) return "No messages yet";
@@ -82,6 +85,18 @@ function AttachmentCard({ message }: { message: DirectChatMessage }) {
   const isImage = type.startsWith("image/");
   const isPdf = type === "application/pdf";
   const size = formatBytes(message.attachment_size);
+  if (isImage) {
+    return (
+      <div className="mt-2 max-w-[240px]">
+        <RequestProofPreview
+          url={message.attachment_url}
+          name={message.attachment_name}
+          compact
+          title="Image preview"
+        />
+      </div>
+    );
+  }
   return (
     <a
       href={message.attachment_url}
@@ -89,18 +104,6 @@ function AttachmentCard({ message }: { message: DirectChatMessage }) {
       rel="noopener noreferrer"
       className="mt-2 block overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-sm"
     >
-      {isImage ? (
-        <div className="relative aspect-video w-full overflow-hidden">
-          <Image
-            src={message.attachment_url}
-            alt={message.attachment_name}
-            fill
-            unoptimized
-            loading="lazy"
-            className="object-cover"
-          />
-        </div>
-      ) : (
         <span className="flex items-center gap-2.5 px-3 py-2.5">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
             {isPdf ? <FileText className="size-4" /> : <File className="size-4" />}
@@ -111,11 +114,10 @@ function AttachmentCard({ message }: { message: DirectChatMessage }) {
           {size && (
             <span className="shrink-0 text-xs text-muted-foreground">{size}</span>
           )}
-        </span>
-      )}
+      </span>
       <span className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">{message.attachment_name}</span>
-        <span className="shrink-0 font-medium">{isImage ? "View" : isPdf ? "Open" : "Download"}</span>
+        <span className="shrink-0 font-medium">{isPdf ? "Open" : "Download"}</span>
       </span>
     </a>
   );
@@ -128,6 +130,7 @@ function MessageRow({
   message: DirectChatMessage;
   own: boolean;
 }) {
+  const imageFirst = message.attachment_content_type?.startsWith("image/") ?? false;
   return (
     <div className={own ? "flex justify-end" : "flex justify-start"}>
       <div className={cn("max-w-[88%] sm:max-w-[72%]", own ? "items-end" : "items-start")}>
@@ -138,7 +141,11 @@ function MessageRow({
             {formatMessageTime(message.created_at)}
           </p>
         )}
-        <div
+        <motion.div
+          layout
+          initial={{ opacity: 0, y: 18, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: "spring", stiffness: 420, damping: 32 }}
           className={cn(
             "overflow-hidden rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
             own
@@ -146,11 +153,12 @@ function MessageRow({
               : "rounded-tl-md border border-border bg-muted/60 text-foreground",
           )}
         >
+          {imageFirst && <AttachmentCard message={message} />}
           {message.message && (
-            <p className="whitespace-pre-wrap break-words">{message.message}</p>
+            <p className={cn("whitespace-pre-wrap break-words", imageFirst && "mt-2")}>{message.message}</p>
           )}
-          <AttachmentCard message={message} />
-        </div>
+          {!imageFirst && <AttachmentCard message={message} />}
+        </motion.div>
         {own && (
           <p className="mt-1 flex items-center justify-end gap-1 px-0.5 text-[11px] text-muted-foreground">
             {formatMessageTime(message.created_at)}
@@ -213,14 +221,19 @@ function ThreadLog({
   };
 
   return (
-    <div className="relative flex-1 overflow-hidden bg-background/40">
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-background/40">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-repeat opacity-[0.32]"
+        style={{ backgroundImage: chatDoodle }}
+      />
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         role="log"
         aria-label={`Messages with ${partnerName}`}
         aria-live="polite"
-        className="h-full overflow-y-auto"
+        className="relative h-full min-h-0 overflow-y-scroll overscroll-contain"
       >
         <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-5 sm:px-6">
           {isLoading ? (
@@ -314,6 +327,15 @@ export function SupportChat() {
   const activeChat = useDirectChat(activeThread?.psp_code ?? null);
   const sendMessage = useSendDirectChatMessage();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const input = messageInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+    input.style.overflowY = input.scrollHeight > 128 ? "auto" : "hidden";
+  }, [draft]);
 
   const visibleChats = useMemo(() => {
     const query = chatSearch.trim().toLowerCase();
@@ -360,7 +382,7 @@ export function SupportChat() {
   const canSend = Boolean(activeThread) && !activeChat.isLoading && !activeChat.isError;
 
   return (
-    <section className="grid min-h-[640px] overflow-hidden rounded-2xl border border-border bg-card shadow-sm lg:grid-cols-[340px_minmax(0,1fr)]">
+    <section className="grid min-h-[640px] overflow-hidden rounded-2xl border border-border bg-card shadow-sm lg:h-[min(760px,calc(100vh-8rem))] lg:min-h-[520px] lg:grid-cols-[340px_minmax(0,1fr)]">
       {/* -------- Inbox -------- */}
       <aside className="flex min-h-[440px] max-h-[70vh] flex-col border-b border-border lg:max-h-none lg:border-b-0 lg:border-r">
         <div className="space-y-3 border-b border-border p-4">
@@ -447,7 +469,7 @@ export function SupportChat() {
                     className={cn(
                       "flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors",
                       selected
-                        ? "bg-primary/10 ring-1 ring-inset ring-primary/20"
+                        ? "relative bg-primary/10 before:absolute before:inset-y-3 before:left-0 before:w-1 before:rounded-full before:bg-primary"
                         : "hover:bg-muted/60",
                     )}
                   >
@@ -508,7 +530,7 @@ export function SupportChat() {
       </aside>
 
       {/* -------- Conversation -------- */}
-      <div className="flex min-h-[520px] min-w-0 flex-col">
+      <div className="flex min-h-[520px] min-w-0 flex-col lg:min-h-0">
         {activeThread ? (
           <>
             <header className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -543,25 +565,29 @@ export function SupportChat() {
               className="border-t border-border bg-card p-3 sm:p-4"
             >
               {attachmentFile && (
-                <p className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
-                  <File className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                    {attachmentFile.name}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatBytes(attachmentFile.size)}
-                  </span>
+                <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-2">
+                  {attachmentFile.type.startsWith("image/") ? (
+                    <div className="min-w-0 flex-1">
+                      <RequestProofPreview file={attachmentFile} compact title="Selected image" />
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+                      <File className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium">{attachmentFile.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(attachmentFile.size)}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => setAttachmentFile(null)}
                     aria-label="Remove attachment"
-                    className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     <X className="size-4" />
                   </button>
-                </p>
+                </div>
               )}
-              <div className="flex items-end gap-2">
+              <div className="flex items-end gap-2 rounded-2xl border border-input bg-background p-1.5 shadow-sm transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/20">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -574,12 +600,13 @@ export function SupportChat() {
                   variant="ghost"
                   size="icon"
                   aria-label="Attach a file"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  className="size-9 shrink-0 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Paperclip className="size-4" />
                 </Button>
                 <textarea
+                  ref={messageInputRef}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
@@ -589,16 +616,17 @@ export function SupportChat() {
                     }
                   }}
                   maxLength={4000}
-                  rows={2}
+                  rows={1}
                   placeholder="Write a message…"
                   disabled={sendMessage.isPending}
                   aria-label="Message"
-                  className="min-h-10 flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="max-h-32 min-h-9 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <Button
                   type="submit"
                   size="icon"
                   aria-label="Send message"
+                  className="size-9 shrink-0 rounded-xl shadow-sm transition-transform active:scale-95"
                   disabled={
                     sendMessage.isPending ||
                     (!draft.trim() && !attachmentFile) ||
