@@ -12,6 +12,15 @@ import {
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SerialNumberCell } from "@/components/ui/serial-number-cell";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows";
@@ -62,6 +71,96 @@ function formatAuditDetailValue(value: unknown): string {
   return String(value);
 }
 
+// Every audit action the backend writes, grouped for the filter dropdown and
+// mapped to a plain-English label. Mirrors the audit(db, ...) calls in the
+// traze_psp_backend routers.
+const auditActionGroups: {
+  label: string;
+  actions: { value: string; label: string }[];
+}[] = [
+  {
+    label: "Sign-in & password",
+    actions: [
+      { value: "auth.login_success", label: "Signed in" },
+      { value: "auth.login_failed", label: "Failed sign-in" },
+      { value: "auth.login_locked", label: "Sign-in blocked (locked)" },
+      { value: "auth.logout", label: "Signed out" },
+      { value: "auth.password_changed", label: "Password changed" },
+      {
+        value: "auth.password_change_failed",
+        label: "Password change failed",
+      },
+    ],
+  },
+  {
+    label: "Portal users",
+    actions: [
+      { value: "user.created", label: "User created" },
+      { value: "user.updated", label: "User updated" },
+      { value: "user.sessions_revoked", label: "User sessions revoked" },
+    ],
+  },
+  {
+    label: "PSPs",
+    actions: [
+      { value: "psp.created", label: "PSP created" },
+      { value: "psp.updated", label: "PSP updated" },
+      { value: "psp.credentials_rotated", label: "PSP credentials rotated" },
+      { value: "psp.credentials_revoked", label: "PSP credentials revoked" },
+      { value: "psp.sessions_revoked", label: "PSP sessions revoked" },
+      { value: "psp.deleted", label: "PSP deleted" },
+    ],
+  },
+  {
+    label: "Deposits",
+    actions: [
+      { value: "deposit.submitted", label: "Deposit submitted" },
+      { value: "deposit.processing", label: "Deposit marked processing" },
+      { value: "deposit.approved", label: "Deposit approved" },
+      { value: "deposit.rejected", label: "Deposit rejected" },
+      { value: "deposit.reversed", label: "Deposit reversed" },
+      { value: "deposit.callback_resent", label: "Deposit callback resent" },
+    ],
+  },
+  {
+    label: "Withdrawals",
+    actions: [
+      { value: "withdrawal.submitted", label: "Withdrawal submitted" },
+      { value: "withdrawal.processing", label: "Withdrawal marked processing" },
+      { value: "withdrawal.approved", label: "Withdrawal approved" },
+      { value: "withdrawal.rejected", label: "Withdrawal rejected" },
+      { value: "withdrawal.reversed", label: "Withdrawal reversed" },
+      {
+        value: "withdrawal.callback_resent",
+        label: "Withdrawal callback resent",
+      },
+    ],
+  },
+  {
+    label: "Support chat",
+    actions: [
+      { value: "chat.opened", label: "Chat opened" },
+      { value: "chat.closed", label: "Chat closed" },
+      { value: "chat.reopened", label: "Chat reopened" },
+    ],
+  },
+];
+
+const auditActionLabels: Record<string, string> = Object.fromEntries(
+  auditActionGroups.flatMap((group) =>
+    group.actions.map((action) => [action.value, action.label]),
+  ),
+);
+
+function formatAuditActionLabel(action: string) {
+  return (
+    auditActionLabels[action] ??
+    action
+      .replace(/[._]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
+}
+
 export function AuditSystemPanel() {
   const [actionFilter, setActionFilter] = useState("");
   const [targetFilter, setTargetFilter] = useState("");
@@ -101,25 +200,43 @@ export function AuditSystemPanel() {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
-            <Input
-              aria-label="Filter audit action prefix"
-              placeholder="Action prefix"
-              value={actionFilter}
-              onChange={(event) => {
-                setActionFilter(event.target.value);
+            <Select
+              value={actionFilter || "all"}
+              onValueChange={(value) => {
+                setActionFilter(value === "all" ? "" : value);
                 setAuditOffset(0);
               }}
-              className="w-36"
-            />
+            >
+              <SelectTrigger
+                aria-label="Filter audit logs by action"
+                className="w-[220px]"
+              >
+                <SelectValue placeholder="All actions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All actions</SelectItem>
+                {auditActionGroups.map((group) => (
+                  <SelectGroup key={group.label}>
+                    <SelectLabel>{group.label}</SelectLabel>
+                    {group.actions.map((action) => (
+                      <SelectItem key={action.value} value={action.value}>
+                        {action.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
-              aria-label="Filter audit target"
-              placeholder="Target"
+              aria-label="Filter audit logs by target ID"
+              title="Exact match on the record the action affected: a portal user ID, a PSP code, or a deposit/withdrawal/chat ID."
+              placeholder="Target ID"
               value={targetFilter}
               onChange={(event) => {
                 setTargetFilter(event.target.value);
                 setAuditOffset(0);
               }}
-              className="w-36"
+              className="w-[200px]"
             />
           </div>
           <Button
@@ -193,7 +310,9 @@ export function AuditSystemPanel() {
                           {row.actor_id}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-medium">{row.action}</td>
+                      <td className="px-4 py-3 font-medium" title={row.action}>
+                        {formatAuditActionLabel(row.action)}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs">
                         {row.target ?? "—"}
                       </td>
